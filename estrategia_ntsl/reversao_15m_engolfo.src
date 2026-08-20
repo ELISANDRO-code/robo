@@ -5,64 +5,108 @@
 // Regra central: TOPO/FUNDO PRIMEIRO; ENGOLFO DEPOIS.
 // O engolfo apenas confirma a entrada; quem autoriza o setup e a localizacao.
 //
-// - Venda no topo : preco sobe ate a maior maxima do periodo (topo) e surge
-//                   um engolfo de baixa -> vende a mercado no fechamento.
-// - Compra no fundo: preco cai ate a menor minima do periodo (fundo) e surge
-//                   um engolfo de alta  -> compra a mercado no fechamento.
-// - Veto: engolfo que nao esteja no extremo do periodo (no meio do caminho)
-//         nao gera entrada.
+// Dois criterios de regiao, combinaveis via ModoRegiao:
+//   0 = SWING   : topo/fundo = extremo recente das ultimas Lookback barras.
+//   1 = PERCENT : topo/fundo = preco alcancou a linha de +/- BandaEntrada %.
+//   2 = BOTH    : exige os dois criterios ao mesmo tempo (mais restritivo).
+//   3 = EITHER  : basta um dos dois.
+//
+// - Venda no topo : engolfo de baixa numa regiao de topo -> vende a mercado.
+// - Compra no fundo: engolfo de alta numa regiao de fundo -> compra a mercado.
+// - Veto: engolfo fora da regiao (no meio do caminho) nao gera entrada.
 // - Distancia maxima: nao entra se o fechamento ja estiver a mais de
 //                     DistMaxRegiao pontos do extremo da regiao.
 // - Gestao fixa: Stop Loss 360 pontos / Take Profit 650 pontos.
 //
-// OBS.: Os nomes de procedimentos de ordem/posicao (BuyAtMarket,
-// SellShortAtMarket, SellToCoverAtMarket, BuyToCoverAtMarket, IsBought,
-// IsSold, BuyPrice, SellPrice) seguem a API padrao de estrategias
-// automatizadas do NTSL. Confira/ajuste conforme a versao do seu Profit
-// antes de colocar em producao.
+// Linhas de %: RefPreco e a linha de 0% (mesma referencia das "Linhas
+// Milionarias"/linhas de porcentagem do grafico). Ex. da imagem: 171035,
+// com bandas de 0,5% (171890) e 1% (172745).
+//
+// OBS.: Os nomes de procedimentos de ordem/posicao seguem a API padrao de
+// estrategias automatizadas do NTSL. Confira/ajuste conforme a versao do seu
+// Profit antes de operar em conta real.
 //======================================================================
 
 input
   Contratos(1);
   StopLoss(360);
   TakeProfit(650);
-  Lookback(20);        // candles usados para caracterizar topo/fundo
-  DistMaxRegiao(500);  // distancia maxima (pontos) do extremo da regiao
+  Lookback(20);         // barras para caracterizar topo/fundo (swing)
+  Recencia(3);          // o topo/fundo precisa ter ocorrido nas ultimas N barras
+  DistMaxRegiao(500);   // distancia maxima (pontos) do extremo da regiao
+  ModoRegiao(0);        // 0=swing 1=percent 2=both 3=either
+  RefPreco(0.0);        // linha de 0% (obrigatorio p/ percent/both/either)
+  BandaEntrada(0.5);    // banda minima (%) para caracterizar a regiao
 
 var
-  TopoRegiao   : Float;
-  FundoRegiao  : Float;
   EngolfoBaixa : Boolean;
   EngolfoAlta  : Boolean;
-  Precisao     : Float;
+  TopoJanela   : Float;
+  FundoJanela  : Float;
+  TopoRecente  : Float;
+  FundoRecente : Float;
+  LinhaTopo    : Float;
+  LinhaFundo   : Float;
+  SwingTopoOk  : Boolean;
+  SwingFundoOk : Boolean;
+  PctTopoOk    : Boolean;
+  PctFundoOk   : Boolean;
+  TopoOk       : Boolean;
+  FundoOk      : Boolean;
+  TemRef       : Boolean;
 
 begin
   // ---- Engolfo (corpo engolfando corpo) -----------------------------
   EngolfoBaixa := (Close[1] > Open[1]) and (Close < Open) and
                   (Open >= Close[1]) and (Close <= Open[1]);
-
   EngolfoAlta  := (Close[1] < Open[1]) and (Close > Open) and
                   (Open <= Close[1]) and (Close >= Open[1]);
 
-  // ---- Regiao de topo/fundo -----------------------------------------
-  // Highest/Lowest incluem o candle atual, entao o extremo do periodo
-  // coincide com a maxima/minima do candle de engolfo quando ele marca o topo/fundo.
-  TopoRegiao  := Highest(High, Lookback);
-  FundoRegiao := Lowest(Low, Lookback);
+  // ---- Criterio SWING (extremo recente) -----------------------------
+  // O extremo da janela e "recente" quando o extremo das ultimas Recencia
+  // barras coincide com o extremo das ultimas Lookback barras.
+  TopoJanela   := Highest(High, Lookback);
+  FundoJanela  := Lowest(Low,  Lookback);
+  TopoRecente  := Highest(High, Recencia);
+  FundoRecente := Lowest(Low,  Recencia);
+  SwingTopoOk  := TopoRecente >= TopoJanela;
+  SwingFundoOk := FundoRecente <= FundoJanela;
+
+  // ---- Criterio PERCENT (linhas de %) -------------------------------
+  TemRef    := RefPreco > 0;
+  LinhaTopo := RefPreco * (1 + BandaEntrada / 100);
+  LinhaFundo:= RefPreco * (1 - BandaEntrada / 100);
+  PctTopoOk := TemRef and (TopoRecente >= LinhaTopo);
+  PctFundoOk:= TemRef and (FundoRecente <= LinhaFundo);
+
+  // ---- Combinacao conforme ModoRegiao -------------------------------
+  if (ModoRegiao = 1) and TemRef then begin
+    TopoOk  := PctTopoOk;
+    FundoOk := PctFundoOk;
+  end
+  else if (ModoRegiao = 2) and TemRef then begin
+    TopoOk  := SwingTopoOk and PctTopoOk;
+    FundoOk := SwingFundoOk and PctFundoOk;
+  end
+  else if (ModoRegiao = 3) and TemRef then begin
+    TopoOk  := SwingTopoOk or PctTopoOk;
+    FundoOk := SwingFundoOk or PctFundoOk;
+  end
+  else begin
+    // 0 = swing (ou qualquer modo sem RefPreco valido)
+    TopoOk  := SwingTopoOk;
+    FundoOk := SwingFundoOk;
+  end;
 
   //====================================================================
   // ENTRADAS (somente quando nao ha posicao)
   //====================================================================
   if (not IsBought) and (not IsSold) then
   begin
-    // Venda no topo: engolfo de baixa marcando a maior maxima do periodo
-    if EngolfoBaixa and (High >= TopoRegiao) and
-       ((TopoRegiao - Close) <= DistMaxRegiao) then
+    if EngolfoBaixa and TopoOk and ((TopoJanela - Close) <= DistMaxRegiao) then
       SellShortAtMarket(Contratos);
 
-    // Compra no fundo: engolfo de alta marcando a menor minima do periodo
-    if EngolfoAlta and (Low <= FundoRegiao) and
-       ((Close - FundoRegiao) <= DistMaxRegiao) then
+    if EngolfoAlta and FundoOk and ((Close - FundoJanela) <= DistMaxRegiao) then
       BuyAtMarket(Contratos);
   end;
 

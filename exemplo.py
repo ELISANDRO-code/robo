@@ -16,10 +16,30 @@ candles = [
     Candle(170_600, 170_650, 169_800, 169_900),  # cai e toca o alvo (-650)
 ]
 
-res = backtest(candles, StrategyParams(lookback=6))
-print(res.summary())
-for t in res.trades:
-    print(
-        f"  {t.direction} @ {t.entry_price:.0f} -> {t.result} "
-        f"@ {t.exit_price:.0f} ({t.pnl_points:+.0f} pts)"
-    )
+def rodar(titulo, params):
+    res = backtest(candles, params)
+    print(titulo)
+    print("  " + res.summary())
+    for t in res.trades:
+        print(
+            f"  {t.direction} @ {t.entry_price:.0f} -> {t.result} "
+            f"@ {t.exit_price:.0f} ({t.pnl_points:+.0f} pts)"
+        )
+
+
+# (A) Só swing (extremo das últimas N barras)
+rodar("Modo SWING:", StrategyParams(lookback=6, region_mode="swing"))
+
+# (B) Só linhas de %: como no gráfico, a linha de 0% fica ABAIXO do topo e o
+# preço subiu até +1%. Aqui o topo (171035) coincide com a linha de +1%.
+REF_0PCT = 169_341  # 0%; +1% = 169341*1.01 ~= 171035
+rodar(
+    "\nModo PERCENT (topo em +1%):",
+    StrategyParams(lookback=6, region_mode="percent", ref_price=REF_0PCT, percent_entrada=1.0),
+)
+
+# (A e B) Exige os dois ao mesmo tempo
+rodar(
+    "\nModo BOTH (swing + %):",
+    StrategyParams(lookback=6, region_mode="both", ref_price=REF_0PCT, percent_entrada=1.0),
+)

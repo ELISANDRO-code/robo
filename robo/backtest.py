@@ -60,10 +60,17 @@ class BacktestResult:
         closed = self.wins + self.losses
         return (self.wins / closed) if closed else 0.0
 
+    @property
+    def expectancy(self) -> float:
+        """Expectativa (pontos médios por trade fechado)."""
+        closed = self.wins + self.losses
+        return (self.total_points / closed) if closed else 0.0
+
     def summary(self) -> str:
         return (
             f"Trades: {len(self.trades)} | Wins: {self.wins} | "
             f"Losses: {self.losses} | Win rate: {self.win_rate:.1%} | "
+            f"Expectativa: {self.expectancy:+.1f} pts/trade | "
             f"Resultado: {self.total_points:+.0f} pontos"
         )
 

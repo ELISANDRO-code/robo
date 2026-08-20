@@ -14,6 +14,10 @@ from .strategy import (
     is_bullish_engulfing,
     is_swing_top,
     is_swing_bottom,
+    in_top_zone_percent,
+    in_bottom_zone_percent,
+    top_line,
+    bottom_line,
     generate_signal,
 )
 from .backtest import Trade, BacktestResult, backtest
@@ -28,6 +32,10 @@ __all__ = [
     "is_bullish_engulfing",
     "is_swing_top",
     "is_swing_bottom",
+    "in_top_zone_percent",
+    "in_bottom_zone_percent",
+    "top_line",
+    "bottom_line",
     "generate_signal",
     "Trade",
     "BacktestResult",

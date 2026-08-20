@@ -32,16 +32,32 @@ Exemplo: o mercado cai, forma um fundo, sobe sem engolfo e, durante essa pequena
 subida, aparece um engolfo de baixa — **não vende**, porque o engolfo não surgiu
 num topo válido.
 
+> **Análise profunda** (engenharia reversa das linhas de %, matemática do
+> 360/650, limitações do modelo): veja [`ANALISE.md`](ANALISE.md).
+
 ## Como as regras viram código
 
 | Regra do operacional | Implementação |
 | --- | --- |
 | Engolfo de baixa/alta | `is_bearish_engulfing` / `is_bullish_engulfing` (corpo engolfando o corpo anterior) |
-| Região de topo/fundo | `is_swing_top` / `is_swing_bottom` — o candle precisa marcar a maior máxima / menor mínima dos últimos `lookback` candles |
-| Veto do "meio do caminho" | consequência direta do teste de topo/fundo: um engolfo fora do extremo do período não é sinal |
+| Região de topo/fundo | **dois critérios** (ver abaixo): swing recente e/ou linhas de % |
+| Veto do "meio do caminho" | consequência direta do critério de região: um engolfo fora de um topo/fundo recente não é sinal |
 | Não entrar se andou ~500 pts | filtro de distância `dist_max_regiao` em `generate_signal` |
 | Segunda oportunidade | `max_entradas_regiao` (padrão 2) e controle de região no backtester |
 | SL 360 / TP 650 | `STOP_LOSS_PONTOS` / `TAKE_PROFIT_PONTOS` em `robo/backtest.py` |
+
+### Os dois critérios de região (`region_mode`)
+
+| Modo | Topo/fundo válido quando… |
+| --- | --- |
+| `swing` (padrão) | o **extremo recente** das últimas `lookback` barras acabou de se formar (nos últimos `recencia_regiao` candles) |
+| `percent` | a máxima/mínima alcançou a **linha de ±`percent_entrada`%** sobre `ref_price` (a linha de 0% do gráfico) |
+| `both` | **os dois** ao mesmo tempo (mais seletivo) |
+| `either` | **qualquer um** dos dois |
+
+As linhas de % reproduzem as "Linhas Milionárias" do Profit: `ref_price` é a linha
+de 0% (ex.: 171035 no pregão da imagem), e as bandas ±0,5%/±1% saem de
+`ref_price × (1 ± banda/100)`. Como a referência muda por pregão, é um parâmetro.
 
 ### Definição de engolfo usada
 
@@ -55,10 +71,16 @@ Engolfo de **alta** é o espelho.
 
 ### Região (topo/fundo)
 
-O candle de engolfo só vale se marcar o extremo do período: para venda, sua
-máxima tem de ser a maior das últimas `lookback` barras (topo); para compra, sua
-mínima tem de ser a menor (fundo). É essa exigência que **veta o engolfo no meio
-do caminho** — um engolfo numa perna intermediária não é o extremo do período.
+Pelo critério **swing**, o engolfo só vale se a região formou um **topo/fundo
+recente**: o extremo das últimas `lookback` barras precisa ter ocorrido nos
+últimos `recencia_regiao` candles. Não se exige que o *próprio* candle de engolfo
+seja a máxima — na reversão o topo costuma ficar na barra anterior e o engolfo
+fecha logo abaixo. É essa exigência de "extremo recente" que **veta o engolfo no
+meio do caminho**: se o mercado caiu de um topo antigo e apenas repicou, a maior
+máxima da janela ficou lá atrás (não recente) e o setup não é autorizado.
+
+Pelo critério **percent**, a região é definida pelas linhas de porcentagem
+(`ref_price` ± `percent_entrada`%). Os modos `both`/`either` combinam os dois.
 
 ## Estrutura do repositório
 
@@ -96,17 +118,23 @@ Não há dependências externas — apenas a biblioteca padrão do Python 3.
 
 | Parâmetro | Padrão | Descrição |
 | --- | --- | --- |
-| `lookback` | 20 | candles usados para caracterizar a região de topo/fundo |
+| `lookback` | 20 | candles usados para caracterizar a região de topo/fundo (swing) |
+| `recencia_regiao` | 3 | o topo/fundo precisa ter ocorrido nas últimas N barras |
 | `dist_max_regiao` | 500 | distância máxima (pontos) do preço de entrada até o extremo da região |
 | `max_entradas_regiao` | 2 | entradas permitidas na mesma região (1 = só a primeira; 2 = com segunda oportunidade) |
 | `tol_regiao` | 50 | tolerância (pontos) para considerar dois extremos como a mesma região |
+| `region_mode` | `"swing"` | `swing` / `percent` / `both` / `either` |
+| `ref_price` | `None` | linha de 0% (necessária para `percent`/`both`/`either`) |
+| `percent_entrada` | 0.5 | banda mínima (%) para caracterizar a região |
 
 ## Deploy no Profit Pro (NTSL)
 
 O arquivo `estrategia_ntsl/reversao_15m_engolfo.src` traz a mesma lógica escrita
 em **NTSL** (Nelogica Trading System Language), para colar em uma estratégia do
-Profit Pro no tempo gráfico de 15 minutos. Os `input` permitem ajustar
-contratos, stops e `Lookback`/`DistMaxRegiao`.
+Profit Pro no tempo gráfico de 15 minutos. Os `input` permitem ajustar contratos,
+stops, `Lookback`/`Recencia`/`DistMaxRegiao` e o critério de região
+(`ModoRegiao`: 0=swing, 1=percent, 2=both, 3=either; com `RefPreco` e
+`BandaEntrada` para as linhas de %).
 
 > Os nomes de procedimentos de ordem/posição (`BuyAtMarket`,
 > `SellShortAtMarket`, `SellToCoverAtMarket`, `BuyToCoverAtMarket`, `IsBought`,

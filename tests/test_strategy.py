@@ -59,11 +59,17 @@ class TestRegiao(unittest.TestCase):
 
     def test_swing_top(self):
         candles = self._serie_subida()
-        # o índice 5 é o topo (maior máxima da janela)
+        # o índice 5 é o topo (maior máxima da janela) -> topo recente
         self.assertTrue(is_swing_top(candles, 5, lookback=6))
-        # acrescenta uma barra que recua: ela não é o topo da janela
-        candles = candles + [Candle(104, 104, 99, 100)]
-        self.assertFalse(is_swing_top(candles, 6, lookback=6))
+        # acrescenta várias barras que recuam: o topo deixa de ser recente
+        candles = candles + [
+            Candle(104, 104, 99, 100),
+            Candle(100, 101, 96, 97),
+            Candle(97, 98, 93, 94),
+            Candle(94, 95, 90, 91),
+        ]
+        # no índice 9, a máxima (105) ficou 4 barras atrás -> não é recente
+        self.assertFalse(is_swing_top(candles, 9, lookback=10, recencia=3))
 
     def test_swing_bottom(self):
         candles = [Candle(h - 0, h + 1, h - 3, h - 1) for h in range(100, 90, -1)]
@@ -114,6 +120,66 @@ class TestSinal(unittest.TestCase):
         self.assertIsNotNone(sig)
         self.assertEqual(sig.direction, "buy")
         self.assertEqual(sig.entry_price, 107)
+
+
+class TestRegiaoPercentual(unittest.TestCase):
+    """Critério (B): região definida pelas linhas de porcentagem."""
+
+    REF = 170_000.0  # linha 0% de referência
+
+    def _serie_topo(self):
+        # sobe até o topo; o topo fica na barra anterior (prev) e o engolfo de
+        # baixa fecha logo abaixo (máxima 171050, fechamento 170650).
+        return [
+            Candle(169_000, 169_200, 168_900, 169_100),
+            Candle(169_100, 169_600, 169_000, 169_500),
+            Candle(169_500, 170_100, 169_400, 170_000),
+            Candle(170_000, 170_600, 169_900, 170_500),
+            Candle(170_800, 171_100, 170_750, 171_000),   # topo (prev, alta)
+            Candle(171_050, 171_050, 170_500, 170_650),   # engolfo de baixa
+        ]
+
+    def test_percent_entra_quando_toca_linha_meio_pct(self):
+        # +0,5% = 170850; a máxima 171050 alcança a linha -> válido
+        candles = self._serie_topo()
+        params = StrategyParams(
+            lookback=6, region_mode="percent", ref_price=self.REF,
+            percent_entrada=0.5,
+        )
+        sig = generate_signal(candles, 5, params)
+        self.assertIsNotNone(sig)
+        self.assertEqual(sig.direction, "sell")
+
+    def test_percent_veta_quando_nao_alcanca_a_linha(self):
+        # +1% = 171700; a máxima 171050 NÃO alcança -> vetado no modo percent
+        candles = self._serie_topo()
+        params = StrategyParams(
+            lookback=6, region_mode="percent", ref_price=self.REF,
+            percent_entrada=1.0,
+        )
+        self.assertIsNone(generate_signal(candles, 5, params))
+
+    def test_both_exige_swing_e_linha(self):
+        candles = self._serie_topo()  # toca +0,5% e é topo recente
+        params = StrategyParams(
+            lookback=6, region_mode="both", ref_price=self.REF,
+            percent_entrada=0.5,
+        )
+        self.assertIsNotNone(generate_signal(candles, 5, params))
+
+    def test_both_veta_se_falta_a_linha(self):
+        candles = self._serie_topo()  # é topo recente, mas não toca +1%
+        params = StrategyParams(
+            lookback=6, region_mode="both", ref_price=self.REF,
+            percent_entrada=1.0,
+        )
+        self.assertIsNone(generate_signal(candles, 5, params))
+
+    def test_percent_sem_ref_cai_para_swing(self):
+        # sem ref_price, o modo percent/both usa o critério de swing
+        candles = self._serie_topo()
+        params = StrategyParams(lookback=6, region_mode="both", ref_price=None)
+        self.assertIsNotNone(generate_signal(candles, 5, params))
 
 
 class TestBacktest(unittest.TestCase):
