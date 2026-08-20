@@ -1,0 +1,87 @@
+//======================================================================
+// Reversao 15m - Engolfo em regiao de topo/fundo
+// Plataforma: Profit Pro (Nelogica) - linguagem NTSL
+//
+// Regra central: TOPO/FUNDO PRIMEIRO; ENGOLFO DEPOIS.
+// O engolfo apenas confirma a entrada; quem autoriza o setup e a localizacao.
+//
+// - Venda no topo : preco sobe ate a maior maxima do periodo (topo) e surge
+//                   um engolfo de baixa -> vende a mercado no fechamento.
+// - Compra no fundo: preco cai ate a menor minima do periodo (fundo) e surge
+//                   um engolfo de alta  -> compra a mercado no fechamento.
+// - Veto: engolfo que nao esteja no extremo do periodo (no meio do caminho)
+//         nao gera entrada.
+// - Distancia maxima: nao entra se o fechamento ja estiver a mais de
+//                     DistMaxRegiao pontos do extremo da regiao.
+// - Gestao fixa: Stop Loss 360 pontos / Take Profit 650 pontos.
+//
+// OBS.: Os nomes de procedimentos de ordem/posicao (BuyAtMarket,
+// SellShortAtMarket, SellToCoverAtMarket, BuyToCoverAtMarket, IsBought,
+// IsSold, BuyPrice, SellPrice) seguem a API padrao de estrategias
+// automatizadas do NTSL. Confira/ajuste conforme a versao do seu Profit
+// antes de colocar em producao.
+//======================================================================
+
+input
+  Contratos(1);
+  StopLoss(360);
+  TakeProfit(650);
+  Lookback(20);        // candles usados para caracterizar topo/fundo
+  DistMaxRegiao(500);  // distancia maxima (pontos) do extremo da regiao
+
+var
+  TopoRegiao   : Float;
+  FundoRegiao  : Float;
+  EngolfoBaixa : Boolean;
+  EngolfoAlta  : Boolean;
+  Precisao     : Float;
+
+begin
+  // ---- Engolfo (corpo engolfando corpo) -----------------------------
+  EngolfoBaixa := (Close[1] > Open[1]) and (Close < Open) and
+                  (Open >= Close[1]) and (Close <= Open[1]);
+
+  EngolfoAlta  := (Close[1] < Open[1]) and (Close > Open) and
+                  (Open <= Close[1]) and (Close >= Open[1]);
+
+  // ---- Regiao de topo/fundo -----------------------------------------
+  // Highest/Lowest incluem o candle atual, entao o extremo do periodo
+  // coincide com a maxima/minima do candle de engolfo quando ele marca o topo/fundo.
+  TopoRegiao  := Highest(High, Lookback);
+  FundoRegiao := Lowest(Low, Lookback);
+
+  //====================================================================
+  // ENTRADAS (somente quando nao ha posicao)
+  //====================================================================
+  if (not IsBought) and (not IsSold) then
+  begin
+    // Venda no topo: engolfo de baixa marcando a maior maxima do periodo
+    if EngolfoBaixa and (High >= TopoRegiao) and
+       ((TopoRegiao - Close) <= DistMaxRegiao) then
+      SellShortAtMarket(Contratos);
+
+    // Compra no fundo: engolfo de alta marcando a menor minima do periodo
+    if EngolfoAlta and (Low <= FundoRegiao) and
+       ((Close - FundoRegiao) <= DistMaxRegiao) then
+      BuyAtMarket(Contratos);
+  end;
+
+  //====================================================================
+  // GESTAO (Stop Loss / Take Profit fixos em pontos)
+  //====================================================================
+  if (IsBought) then
+  begin
+    if (Low <= (BuyPrice - StopLoss)) then
+      SellToCoverAtMarket(Contratos)
+    else if (High >= (BuyPrice + TakeProfit)) then
+      SellToCoverAtMarket(Contratos);
+  end;
+
+  if (IsSold) then
+  begin
+    if (High >= (SellPrice + StopLoss)) then
+      BuyToCoverAtMarket(Contratos)
+    else if (Low <= (SellPrice - TakeProfit)) then
+      BuyToCoverAtMarket(Contratos);
+  end;
+end;
