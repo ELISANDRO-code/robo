@@ -116,6 +116,39 @@ python3 -m unittest discover -s tests -v
 
 Não há dependências externas — apenas a biblioteca padrão do Python 3.
 
+## Backtest com dados reais: o setup tem edge?
+
+É a finalidade do projeto — e exige dados históricos reais de 15m, que devem
+ser exportados do Profit (este repositório não inclui dados de mercado).
+
+**1. Exportar do Profit Pro:** abra o gráfico WINFUT 15min com o máximo de
+histórico → clique direito no gráfico → *Exportar* (ou *Salvar dados*) → CSV.
+O formato usual `Data;Hora;Abertura;Máxima;Mínima;Fechamento;Volume` é lido
+automaticamente (separador e decimal detectados; ordem invertida corrigida).
+
+**2. Rodar o estudo:**
+
+```bash
+python3 backtest_csv.py WINFUT_15m.csv            # compara both / swing / percent
+python3 backtest_csv.py WINFUT_15m.csv --modo both --banda 1.0
+```
+
+**3. Ler o veredito.** O número-chave da gestão 360/650 é o win-rate de
+break-even, **35,64%** (antes de custos):
+
+- win-rate acima disso com expectativa positiva e amostra ≥ 30 trades →
+  **edge bruto positivo** (falta descontar custos/derrapagem — some ~10 pts
+  por trade de custo para o WIN como aproximação);
+- abaixo disso → **sem edge nesta amostra**, não opere em conta real.
+
+O relatório traz também expectativa (pts/trade), profit factor, drawdown
+máximo e a maior sequência de perdas — este último número diz o fôlego
+psicológico/financeiro que a estratégia exige.
+
+> Sanidade da ferramenta: rodando sobre um random walk sintético (que por
+> construção não tem edge), o veredito é "sem edge" — o backtester não
+> fabrica resultado.
+
 ## Parâmetros (`StrategyParams`)
 
 | Parâmetro | Padrão | Descrição |

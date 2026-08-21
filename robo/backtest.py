@@ -66,6 +66,36 @@ class BacktestResult:
         closed = self.wins + self.losses
         return (self.total_points / closed) if closed else 0.0
 
+    @property
+    def profit_factor(self) -> float:
+        """Soma dos ganhos / soma das perdas (>1 indica edge bruto)."""
+        gains = sum(t.pnl_points for t in self.trades if t.pnl_points > 0)
+        losses = -sum(t.pnl_points for t in self.trades if t.pnl_points < 0)
+        return (gains / losses) if losses else float("inf") if gains else 0.0
+
+    @property
+    def max_drawdown(self) -> float:
+        """Maior queda (em pontos) da curva de capital trade a trade."""
+        equity = 0.0
+        peak = 0.0
+        dd = 0.0
+        for t in self.trades:
+            equity += t.pnl_points
+            peak = max(peak, equity)
+            dd = max(dd, peak - equity)
+        return dd
+
+    @property
+    def max_consecutive_losses(self) -> int:
+        run = best = 0
+        for t in self.trades:
+            if t.result == "stop":
+                run += 1
+                best = max(best, run)
+            elif t.result == "take":
+                run = 0
+        return best
+
     def summary(self) -> str:
         return (
             f"Trades: {len(self.trades)} | Wins: {self.wins} | "
