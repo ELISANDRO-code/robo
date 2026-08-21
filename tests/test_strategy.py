@@ -182,6 +182,57 @@ class TestRegiaoPercentual(unittest.TestCase):
         self.assertIsNotNone(generate_signal(candles, 5, params))
 
 
+class TestAncoraFechamentoAnterior(unittest.TestCase):
+    """Âncora automática da linha de 0%: fechamento do pregão anterior."""
+
+    def _serie_dois_pregoes(self, fech_anterior):
+        # pregão 19/08 termina fechando em `fech_anterior`; pregão 20/08 sobe
+        # até o topo e forma o engolfo de baixa (topo na barra anterior).
+        d1, d2 = "2026-08-19", "2026-08-20"
+        return [
+            Candle(169_500, 170_100, 169_400, fech_anterior, session=d1),
+            Candle(169_000, 169_200, 168_900, 169_100, session=d2),
+            Candle(169_100, 169_600, 169_000, 169_500, session=d2),
+            Candle(169_500, 170_100, 169_400, 170_000, session=d2),
+            Candle(170_000, 170_600, 169_900, 170_500, session=d2),
+            Candle(170_800, 171_100, 170_750, 171_000, session=d2),   # topo (prev)
+            Candle(171_050, 171_050, 170_500, 170_650, session=d2),   # engolfo
+        ]
+
+    def test_ancora_no_fechamento_anterior(self):
+        # fech. anterior 170000 -> +0,5% = 170850; topo 171100 alcança -> válido
+        candles = self._serie_dois_pregoes(170_000)
+        params = StrategyParams(lookback=6, region_mode="both", percent_entrada=0.5)
+        sig = generate_signal(candles, 6, params)
+        self.assertIsNotNone(sig)
+        self.assertEqual(sig.direction, "sell")
+
+    def test_ancora_veta_quando_linha_fica_longe(self):
+        # fech. anterior 171000 -> +0,5% = 171855; topo 171100 NÃO alcança
+        candles = self._serie_dois_pregoes(171_000)
+        params = StrategyParams(lookback=6, region_mode="both", percent_entrada=0.5)
+        self.assertIsNone(generate_signal(candles, 6, params))
+
+    def test_ref_manual_tem_prioridade(self):
+        # mesmo com sessão anterior favorável, o override manual manda
+        candles = self._serie_dois_pregoes(170_000)
+        params = StrategyParams(
+            lookback=6, region_mode="both", percent_entrada=0.5,
+            ref_price=171_000,   # linha +0,5% = 171855, inalcançável
+        )
+        self.assertIsNone(generate_signal(candles, 6, params))
+
+    def test_primeiro_pregao_cai_para_swing(self):
+        # sem pregão anterior (todas as barras da mesma sessão), o modo both
+        # degrada para o critério de swing
+        candles = [
+            Candle(c.open, c.high, c.low, c.close, session="2026-08-20")
+            for c in self._serie_dois_pregoes(170_000)[1:]
+        ]
+        params = StrategyParams(lookback=6, region_mode="both", percent_entrada=0.5)
+        self.assertIsNotNone(generate_signal(candles, 5, params))
+
+
 class TestBacktest(unittest.TestCase):
     def test_venda_bate_alvo(self):
         # setup de venda; depois o preço cai 650+ pontos -> take

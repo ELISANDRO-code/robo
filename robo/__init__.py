@@ -18,6 +18,7 @@ from .strategy import (
     in_bottom_zone_percent,
     top_line,
     bottom_line,
+    resolve_ref_price,
     generate_signal,
 )
 from .backtest import Trade, BacktestResult, backtest
@@ -36,6 +37,7 @@ __all__ = [
     "in_bottom_zone_percent",
     "top_line",
     "bottom_line",
+    "resolve_ref_price",
     "generate_signal",
     "Trade",
     "BacktestResult",

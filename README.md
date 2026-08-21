@@ -50,14 +50,16 @@ num topo válido.
 
 | Modo | Topo/fundo válido quando… |
 | --- | --- |
-| `swing` (padrão) | o **extremo recente** das últimas `lookback` barras acabou de se formar (nos últimos `recencia_regiao` candles) |
-| `percent` | a máxima/mínima alcançou a **linha de ±`percent_entrada`%** sobre `ref_price` (a linha de 0% do gráfico) |
-| `both` | **os dois** ao mesmo tempo (mais seletivo) |
+| `swing` | o **extremo recente** das últimas `lookback` barras acabou de se formar (nos últimos `recencia_regiao` candles) |
+| `percent` | a máxima/mínima recente alcançou a **linha de ±`percent_entrada`%** sobre a linha de 0% |
+| `both` (padrão) | **os dois** ao mesmo tempo (mais seletivo) |
 | `either` | **qualquer um** dos dois |
 
-As linhas de % reproduzem as "Linhas Milionárias" do Profit: `ref_price` é a linha
-de 0% (ex.: 171035 no pregão da imagem), e as bandas ±0,5%/±1% saem de
-`ref_price × (1 ± banda/100)`. Como a referência muda por pregão, é um parâmetro.
+As linhas de % reproduzem as "Linhas Milionárias" do Profit, e a **linha de 0% é
+ancorada no fechamento do pregão anterior**, automaticamente, a cada dia: basta
+os candles carregarem `session` (ex.: `"2026-08-20"`). As bandas saem de
+`ref × (1 ± banda/100)`. `ref_price` continua existindo como override manual;
+sem âncora resolvível, os modos de % degradam para o critério de swing.
 
 ### Definição de engolfo usada
 
@@ -123,8 +125,8 @@ Não há dependências externas — apenas a biblioteca padrão do Python 3.
 | `dist_max_regiao` | 500 | distância máxima (pontos) do preço de entrada até o extremo da região |
 | `max_entradas_regiao` | 2 | entradas permitidas na mesma região (1 = só a primeira; 2 = com segunda oportunidade) |
 | `tol_regiao` | 50 | tolerância (pontos) para considerar dois extremos como a mesma região |
-| `region_mode` | `"swing"` | `swing` / `percent` / `both` / `either` |
-| `ref_price` | `None` | linha de 0% (necessária para `percent`/`both`/`either`) |
+| `region_mode` | `"both"` | `swing` / `percent` / `both` / `either` |
+| `ref_price` | `None` | override manual da linha de 0%; se `None`, âncora automática no **fechamento do pregão anterior** (via `Candle.session`) |
 | `percent_entrada` | 0.5 | banda mínima (%) para caracterizar a região |
 
 ## Deploy no Profit Pro (NTSL)
@@ -133,8 +135,9 @@ O arquivo `estrategia_ntsl/reversao_15m_engolfo.src` traz a mesma lógica escrit
 em **NTSL** (Nelogica Trading System Language), para colar em uma estratégia do
 Profit Pro no tempo gráfico de 15 minutos. Os `input` permitem ajustar contratos,
 stops, `Lookback`/`Recencia`/`DistMaxRegiao` e o critério de região
-(`ModoRegiao`: 0=swing, 1=percent, 2=both, 3=either; com `RefPreco` e
-`BandaEntrada` para as linhas de %).
+(`ModoRegiao`: 0=swing, 1=percent, 2=both — padrão, 3=either). A linha de 0% é
+ancorada automaticamente no **fechamento do pregão anterior** via `CloseD(1)`;
+`RefPreco > 0` funciona como override manual.
 
 > Os nomes de procedimentos de ordem/posição (`BuyAtMarket`,
 > `SellShortAtMarket`, `SellToCoverAtMarket`, `BuyToCoverAtMarket`, `IsBought`,

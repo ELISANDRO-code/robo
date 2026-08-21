@@ -1,20 +1,29 @@
-"""Exemplo mínimo: gera um setup de venda no topo e roda o backtest.
+"""Exemplo: dois pregões, âncora automática no fechamento anterior.
+
+Reproduz o cenário da imagem: o pregão anterior define a linha de 0%
+(fechamento), o dia seguinte sobe até a região de +1%, forma o engolfo de
+baixa no topo e a venda busca 650 pontos com stop de 360.
 
     python3 exemplo.py
 """
 
 from robo import Candle, StrategyParams, backtest
 
-# Série sintética: sobe até o topo, engolfo de baixa e depois despenca.
+D1, D2 = "2026-08-19", "2026-08-20"
+
 candles = [
-    Candle(170_000, 170_200, 169_900, 170_100),
-    Candle(170_100, 170_400, 170_000, 170_300),
-    Candle(170_300, 170_600, 170_200, 170_500),
-    Candle(170_500, 170_800, 170_400, 170_700),
-    Candle(170_700, 171_000, 170_600, 170_900),  # candle de alta (prev)
-    Candle(171_000, 171_035, 170_550, 170_600),  # engolfo de baixa no topo
-    Candle(170_600, 170_650, 169_800, 169_900),  # cai e toca o alvo (-650)
+    # --- pregão 19/08: última barra fecha em 169341 (linha de 0% do dia 20)
+    Candle(169_600, 169_800, 169_200, 169_341, session=D1),
+    # --- pregão 20/08: sobe até a região de +1% (169341*1.01 ~= 171035)
+    Candle(169_400, 169_700, 169_300, 169_600, session=D2),
+    Candle(169_600, 170_000, 169_500, 169_900, session=D2),
+    Candle(169_900, 170_400, 169_800, 170_300, session=D2),
+    Candle(170_300, 170_800, 170_200, 170_700, session=D2),
+    Candle(170_700, 171_035, 170_600, 170_950, session=D2),  # topo em +1% (prev)
+    Candle(171_000, 171_030, 170_550, 170_600, session=D2),  # engolfo de baixa
+    Candle(170_600, 170_650, 169_800, 169_900, session=D2),  # cai e toca o alvo
 ]
+
 
 def rodar(titulo, params):
     res = backtest(candles, params)
@@ -27,19 +36,13 @@ def rodar(titulo, params):
         )
 
 
-# (A) Só swing (extremo das últimas N barras)
-rodar("Modo SWING:", StrategyParams(lookback=6, region_mode="swing"))
+# Padrão do operacional: BOTH (swing + linhas de %), âncora automática no
+# fechamento do pregão anterior — nenhum ref_price manual necessário.
+rodar("Modo BOTH (padrão, âncora = fech. anterior):", StrategyParams(lookback=6))
 
-# (B) Só linhas de %: como no gráfico, a linha de 0% fica ABAIXO do topo e o
-# preço subiu até +1%. Aqui o topo (171035) coincide com a linha de +1%.
-REF_0PCT = 169_341  # 0%; +1% = 169341*1.01 ~= 171035
+# Comparações:
+rodar("\nModo SWING (só extremo recente):", StrategyParams(lookback=6, region_mode="swing"))
 rodar(
-    "\nModo PERCENT (topo em +1%):",
-    StrategyParams(lookback=6, region_mode="percent", ref_price=REF_0PCT, percent_entrada=1.0),
-)
-
-# (A e B) Exige os dois ao mesmo tempo
-rodar(
-    "\nModo BOTH (swing + %):",
-    StrategyParams(lookback=6, region_mode="both", ref_price=REF_0PCT, percent_entrada=1.0),
+    "\nModo PERCENT (só linhas de %, banda 1%):",
+    StrategyParams(lookback=6, region_mode="percent", percent_entrada=1.0),
 )

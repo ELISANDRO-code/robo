@@ -31,13 +31,19 @@ from typing import List, Optional, Sequence
 
 @dataclass(frozen=True)
 class Candle:
-    """Um candle OHLC. ``time`` é opcional e apenas informativo."""
+    """Um candle OHLC.
+
+    ``time`` é opcional e apenas informativo. ``session`` identifica o pregão
+    (ex.: ``"2026-08-20"``) e é usado para ancorar a linha de 0% no
+    **fechamento do pregão anterior** quando ``ref_price`` não é informado.
+    """
 
     open: float
     high: float
     low: float
     close: float
     time: Optional[str] = None
+    session: Optional[str] = None
 
     @property
     def body_top(self) -> float:
@@ -67,13 +73,15 @@ class StrategyParams:
             de uma nova máxima/mínima marginal).
         region_mode: como caracterizar topo/fundo:
             * ``"swing"``  — apenas extremo das últimas ``lookback`` barras (A);
-            * ``"percent"`` — apenas as linhas de porcentagem (B), exige
-              ``ref_price``;
-            * ``"both"``   — exige os DOIS ao mesmo tempo (mais restritivo);
+            * ``"percent"`` — apenas as linhas de porcentagem (B);
+            * ``"both"``   — exige os DOIS ao mesmo tempo (padrão, mais
+              restritivo);
             * ``"either"`` — basta UM dos dois.
-        ref_price: preço da linha de 0% (referência das linhas de %). Necessário
-            para os modos ``"percent"``, ``"both"`` e ``"either"``. No exemplo
-            da imagem, ~171035. Pode variar por pregão.
+        ref_price: preço da linha de 0% (referência das linhas de %). Se
+            ``None`` (padrão), a referência é resolvida automaticamente por
+            pregão como o **fechamento do pregão anterior** — desde que os
+            candles carreguem ``session``. Sem ``ref_price`` e sem ``session``,
+            os modos que dependem de % caem para o critério de swing.
         percent_entrada: banda mínima (em %) para caracterizar a região. Ex.:
             0.5 exige que a máxima do topo tenha alcançado a linha de +0,5%
             (ou a mínima do fundo a de -0,5%). No exemplo, o topo bateu +1%.
@@ -84,7 +92,7 @@ class StrategyParams:
     max_entradas_regiao: int = 2
     tol_regiao: float = 50.0
     recencia_regiao: int = 3
-    region_mode: str = "swing"
+    region_mode: str = "both"
     ref_price: Optional[float] = None
     percent_entrada: float = 0.5
 
@@ -207,6 +215,31 @@ def in_bottom_zone_percent(candle: Candle, ref_price: float, banda_pct: float) -
     return candle.low <= bottom_line(ref_price, banda_pct)
 
 
+def resolve_ref_price(
+    candles: Sequence[Candle], i: int, params: "StrategyParams"
+) -> Optional[float]:
+    """Resolve a linha de 0% para o candle ``i``.
+
+    Prioridade:
+      1. ``params.ref_price`` explícito (override manual);
+      2. **fechamento do pregão anterior** — o close do último candle cuja
+         ``session`` difere da sessão do candle ``i`` (âncora escolhida para as
+         linhas de %);
+      3. ``None`` se não houver como resolver (sem ``session`` nos candles ou
+         primeiro pregão da série) — os modos de % caem para swing.
+    """
+    if params.ref_price is not None:
+        return params.ref_price
+    cur_sess = candles[i].session
+    if cur_sess is None:
+        return None
+    for j in range(i - 1, -1, -1):
+        s = candles[j].session
+        if s is not None and s != cur_sess:
+            return candles[j].close
+    return None
+
+
 def _combine(swing_ok: bool, percent_ok: Optional[bool], mode: str) -> bool:
     """Combina os dois critérios de região conforme ``region_mode``.
 
@@ -244,13 +277,20 @@ def generate_signal(
         return None
 
     prev, cur = candles[i - 1], candles[i]
-    ref = params.ref_price
+    ref = resolve_ref_price(candles, i, params)
+
+    # Extremos recentes (últimas `recencia_regiao` barras, incluindo a atual):
+    # tanto o swing quanto as linhas de % olham o extremo recente, porque o
+    # topo/fundo costuma ficar na barra anterior ao engolfo, não nele.
+    start_rec = max(0, i - params.recencia_regiao + 1)
+    recent_high = max(c.high for c in candles[start_rec : i + 1])
+    recent_low = min(c.low for c in candles[start_rec : i + 1])
 
     # --- Venda no topo -----------------------------------------------------
     if is_bearish_engulfing(prev, cur):
         swing_ok = is_swing_top(candles, i, params.lookback, params.recencia_regiao)
         percent_ok = (
-            in_top_zone_percent(cur, ref, params.percent_entrada)
+            recent_high >= top_line(ref, params.percent_entrada)
             if ref is not None
             else None
         )
@@ -272,7 +312,7 @@ def generate_signal(
     if is_bullish_engulfing(prev, cur):
         swing_ok = is_swing_bottom(candles, i, params.lookback, params.recencia_regiao)
         percent_ok = (
-            in_bottom_zone_percent(cur, ref, params.percent_entrada)
+            recent_low <= bottom_line(ref, params.percent_entrada)
             if ref is not None
             else None
         )

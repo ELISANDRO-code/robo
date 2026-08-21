@@ -38,9 +38,10 @@ uma **referência de 0%** (171.035 no pregão de 20/ago). No exemplo, o topo se
 formou **na região de +1%** — é isso que o critério (B) captura. Como a referência
 muda a cada pregão, ela é um **parâmetro** (`ref_price`), não uma constante.
 
-> Observação: a imagem não revela **qual** é a âncora do 0% (fechamento anterior,
-> preço de ajuste, abertura do dia ou preço manual). Isso não muda a lógica —
-> muda apenas de onde você lê o número para alimentar `ref_price`.
+> **Âncora definida (decisão do operacional):** a linha de 0% é o **fechamento
+> do pregão anterior**. No código, isso é resolvido automaticamente por pregão
+> (`resolve_ref_price`, via `Candle.session`; no NTSL, `CloseD(1)`), com
+> `ref_price`/`RefPreco` disponível como override manual.
 
 ---
 
@@ -111,9 +112,15 @@ e está coberto por teste (`test_veto_engolfo_no_meio_do_caminho`).
 
 ### Critério (B) — linhas de %
 
-Topo por % = a máxima recente alcançou a linha de +`percent_entrada`%
-(fundo = a mínima alcançou −`percent_entrada`%). No `both`, exige-se **swing E %**
-(mais seletivo, menos sinais); no `either`, **basta um**. Sem `ref_price`, os
+Topo por % = a **máxima recente** (últimas `recencia_regiao` barras, não só o
+candle de engolfo — pelo mesmo motivo do swing: o topo costuma ficar na barra
+anterior) alcançou a linha de +`percent_entrada`% (fundo = espelho em
+−`percent_entrada`%). No `both` (padrão do operacional), exige-se **swing E %**
+(mais seletivo, menos sinais); no `either`, **basta um**.
+
+A linha de 0% é **ancorada no fechamento do pregão anterior**, resolvida
+automaticamente candle a candle (`resolve_ref_price`). Sem âncora resolvível
+(primeiro pregão da série, candles sem `session` e sem `ref_price` manual), os
 modos que dependem de % caem para swing (degradação segura).
 
 ---
@@ -190,11 +197,10 @@ parâmetros de `backtest()`.
 
 ## 9. Recomendações e próximos passos
 
-1. **Escolher o modo de região.** O seu exemplo topou na linha de +1%, o que
-   sugere `percent` ou `both`. Comece com `both` (mais seletivo) e compare a
-   frequência/qualidade de sinais com `swing`.
-2. **Definir a âncora do 0%** (fechamento anterior? ajuste? abertura?) para
-   alimentar `ref_price` de forma consistente, dia a dia.
+1. ~~Escolher o modo de região~~ — **decidido: `both`** (swing + linhas de %),
+   agora o padrão. Ainda vale comparar com `swing`/`percent` puros nos dados.
+2. ~~Definir a âncora do 0%~~ — **decidido: fechamento do pregão anterior**,
+   resolvido automaticamente (`resolve_ref_price` / `CloseD(1)`).
 3. **Rodar com dados históricos reais** de 15m do WIN e medir win-rate,
    expectativa e drawdown — comparando `swing` × `percent` × `both`.
 4. **Testar stop estrutural** vs. 360 fixo (seção 7).

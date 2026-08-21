@@ -18,9 +18,9 @@
 //                     DistMaxRegiao pontos do extremo da regiao.
 // - Gestao fixa: Stop Loss 360 pontos / Take Profit 650 pontos.
 //
-// Linhas de %: RefPreco e a linha de 0% (mesma referencia das "Linhas
-// Milionarias"/linhas de porcentagem do grafico). Ex. da imagem: 171035,
-// com bandas de 0,5% (171890) e 1% (172745).
+// Linhas de %: a linha de 0% e ancorada no FECHAMENTO DO PREGAO ANTERIOR
+// (CloseD(1)), automaticamente, a cada dia. RefPreco > 0 funciona como
+// override manual (ex. da imagem: 171035, bandas 0,5% = 171890 e 1% = 172745).
 //
 // OBS.: Os nomes de procedimentos de ordem/posicao seguem a API padrao de
 // estrategias automatizadas do NTSL. Confira/ajuste conforme a versao do seu
@@ -34,11 +34,12 @@ input
   Lookback(20);         // barras para caracterizar topo/fundo (swing)
   Recencia(3);          // o topo/fundo precisa ter ocorrido nas ultimas N barras
   DistMaxRegiao(500);   // distancia maxima (pontos) do extremo da regiao
-  ModoRegiao(0);        // 0=swing 1=percent 2=both 3=either
-  RefPreco(0.0);        // linha de 0% (obrigatorio p/ percent/both/either)
+  ModoRegiao(2);        // 0=swing 1=percent 2=both 3=either (padrao: both)
+  RefPreco(0.0);        // 0 = ancora automatica no fech. do pregao anterior
   BandaEntrada(0.5);    // banda minima (%) para caracterizar a regiao
 
 var
+  RefAtual     : Float;
   EngolfoBaixa : Boolean;
   EngolfoAlta  : Boolean;
   TopoJanela   : Float;
@@ -73,9 +74,16 @@ begin
   SwingFundoOk := FundoRecente <= FundoJanela;
 
   // ---- Criterio PERCENT (linhas de %) -------------------------------
-  TemRef    := RefPreco > 0;
-  LinhaTopo := RefPreco * (1 + BandaEntrada / 100);
-  LinhaFundo:= RefPreco * (1 - BandaEntrada / 100);
+  // Ancora da linha de 0%: fechamento do pregao anterior (CloseD(1)),
+  // com RefPreco > 0 como override manual.
+  if (RefPreco > 0) then
+    RefAtual := RefPreco
+  else
+    RefAtual := CloseD(1);
+
+  TemRef    := RefAtual > 0;
+  LinhaTopo := RefAtual * (1 + BandaEntrada / 100);
+  LinhaFundo:= RefAtual * (1 - BandaEntrada / 100);
   PctTopoOk := TemRef and (TopoRecente >= LinhaTopo);
   PctFundoOk:= TemRef and (FundoRecente <= LinhaFundo);
 
